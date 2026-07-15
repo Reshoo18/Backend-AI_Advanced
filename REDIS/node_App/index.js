@@ -2,10 +2,13 @@ import express from "express"
 import dotenv from "dotenv"
 import connectDb from "./config/db.js"
 import User from "./model/user.model.js"
+import Redis from "ioredis"
 
 const app=express()
 dotenv.config()
 app.use(express.json())
+
+const redis=new Redis(process.env.REDIS_URL)
 
 const PORT=process.env.PORT||5000
 
@@ -37,6 +40,23 @@ app.get("/get",async(req,res)=>{
     catch(error){
         res.status(400).json({success:false,message:"User cant added",error: error.message})
     }
+})
+
+
+app.get("/get-with-redis",async(req,res)=>{
+      
+    const cached=await redis.get("user:all")
+
+    if(cached){
+        return  res.status(200).json(JSON.parse(cached))
+    }
+
+    const user=await User.find({});
+
+    await redis.set("user:all",JSON.stringify(user))
+
+    res.status(201).json(user)
+
 })
   
 app.listen(PORT,()=>{
