@@ -4,6 +4,8 @@ import connectDb from "./config/db.js"
 import User from "./model/user.model.js"
 import Redis from "ioredis"
 import rateLimitter from "./middleware/ratelimit.js"
+import sendEmail from "./config/sendFile.js"
+import emailQueue from "./queue.js"
 
 const app=express()
 dotenv.config()
@@ -24,7 +26,15 @@ app.post("/create",async(req,res)=>{
     await redis.del("user:all")
     const user= await User.create({name,email,password})
 
-    res.status(201).json({success:true,message:"user created successfully",user})}
+    await emailQueue.add("send-email",{email}) 
+
+    res.status(201).json({success:true,message:"user created successfully",user})
+
+    
+
+}
+
+   
     
     catch(error){
         res.status(400).json({success:false,message:"User cant added"})
