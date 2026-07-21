@@ -9,7 +9,7 @@ app.use(express.json())
 const PORT=process.env.PORT||5000
 
 app.get('/',(req,res)=>{
-    res.send(`server is running hello server ${process.env.SERVER_NAME}`)
+    res.send(`server is running hello from order server ${PORT}`)
 })
 
 
