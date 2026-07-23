@@ -2,7 +2,9 @@ import express from 'express'
 import dotenv from 'dotenv'
 import {ChatGroq} from "@langchain/groq"
 import { AIMessage } from '@langchain/core/messages'
-import { StateGraph, Annotation } from "@langchain/langgraph";
+import { StateGraph, Annotation, MessagesAnnotation, MemorySaver } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import {TavilySearch} from "@langchain/tavily"
 
 dotenv.config()
 const app=express()
@@ -45,42 +47,66 @@ app.use(express.json())
 
 // With LAngchain
 
+const tool= new TavilySearch({
+    maxResults:5,
+    topic:"general"
+}) 
+const checkPOinter=new MemorySaver()
+const tools=[tool]
+
+const toolnode=new ToolNode(tools)
+
 const llm=new ChatGroq({
     model: "openai/gpt-oss-120b",
     temperature:2
-})
+}).bindTools(tools)
 
-const State=Annotation.Root({
-   prompt:Annotation,
-   AiMsg:Annotation
 
-})
 
 const callLLM=async(state)=>{
     console.log("state",state)
      const response=await llm.invoke([{
         role:"system",
         content:"you are an ai assitant your name is jarvis"
-    },{
-        role:"human",
-        content:state.prompt
-    }])
-    return {AiMsg:response.content}
+    },
+    ...state.messages
+
+])
+    return {messages:[response]}
 
 }
 
-const graph= new StateGraph(State)
+const shouldContinue=async(state)=>{
+    const lastMessage=state.messages[state.messages.length-1]
+    if(lastMessage.tool_calls.length>0){
+        return "tools"
+    }else{
+        return "__end__"
+    }
+}
+
+const graph= new StateGraph(MessagesAnnotation)
     .addNode("agent",callLLM)
+    .addNode("tools",toolnode)
     .addEdge("__start__","agent")
-    .addEdge("agent","__end__")
-    .compile()
+    .addEdge("tools","agent")
+    
+    .addConditionalEdges("agent",shouldContinue)
+
+    .compile({checkpointer:checkPOinter})
+    
+
 
 
 app.post("/ai",async(req,res)=>{
     const {input}=req.body
-    const response=await graph.invoke({prompt:input})
+    const response=await graph.invoke({messages:[
+       { role:"user",
+        content:input}
+    ]},{configurable:{thread_id:"user123"}}
+)
     console.log(response)
-    res.status(200).json({"ai:":response})
+    res.status(200).json({"ai:":response.messages[response.messages.length-1].content})
 })
 
 app.get("/",(req,res)=>{
