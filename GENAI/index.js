@@ -1,6 +1,8 @@
 import express from 'express'
 import dotenv from 'dotenv'
 import {ChatGroq} from "@langchain/groq"
+import { AIMessage } from '@langchain/core/messages'
+import { StateGraph, Annotation } from "@langchain/langgraph";
 
 dotenv.config()
 const app=express()
@@ -48,17 +50,37 @@ const llm=new ChatGroq({
     temperature:2
 })
 
-app.post("/ai",async(req,res)=>{
-    const {input}=req.body
-    const response=await llm.invoke([{
+const State=Annotation.Root({
+   prompt:Annotation,
+   AiMsg:Annotation
+
+})
+
+const callLLM=async(state)=>{
+    console.log("state",state)
+     const response=await llm.invoke([{
         role:"system",
         content:"you are an ai assitant your name is jarvis"
     },{
         role:"human",
-        content:input
+        content:state.prompt
     }])
+    return {AiMsg:response.content}
 
-    res.status(200).json({"ai:":response.content})
+}
+
+const graph= new StateGraph(State)
+    .addNode("agent",callLLM)
+    .addEdge("__start__","agent")
+    .addEdge("agent","__end__")
+    .compile()
+
+
+app.post("/ai",async(req,res)=>{
+    const {input}=req.body
+    const response=await graph.invoke({prompt:input})
+    console.log(response)
+    res.status(200).json({"ai:":response})
 })
 
 app.get("/",(req,res)=>{
